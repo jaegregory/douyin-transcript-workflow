@@ -17,6 +17,8 @@ douyin_debug_urls.txt
 temp_douyin_audio*
 _douyin_temp_media*
 pipeline_run.log
+_seg_*.wav
+*.wav
 
 # Python cache
 __pycache__/

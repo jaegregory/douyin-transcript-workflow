@@ -9,6 +9,8 @@ import subprocess
 import sys
 from datetime import datetime
 
+from transcribe_segmented import transcribe_segmented
+
 faulthandler.enable()
 
 COOKIE_PATH = r"D:\Download\cookies_all.txt"
@@ -327,47 +329,49 @@ def downloadBestMedia(candidateUrls, mediaPath):
     return None, 0
 
 
-def runTranscribeDevice(mediaPath, transcriptPath, device, computeType):
-    """单独启动一个设备的转写进程，让 CUDA 崩溃时父进程仍可回退到 CPU。"""
-    script = f"""
-import os
-import time
-import faulthandler
-faulthandler.enable()
-os.environ['HF_ENDPOINT'] = {HF_ENDPOINT!r}
-from faster_whisper import WhisperModel
-
-mediaPath = {mediaPath!r}
-transcriptPath = {transcriptPath!r}
-device = {device!r}
-computeType = {computeType!r}
-
-print(f"  [3/4] Transcribing ({{device}})...", flush=True)
-startTime = time.time()
-model = WhisperModel('small', device=device, compute_type=computeType)
-segments, info = model.transcribe(mediaPath, language='zh', beam_size=5)
-print(f"  Language: {{info.language}}, duration: {{info.duration:.0f}}s", flush=True)
-os.makedirs(os.path.dirname(transcriptPath), exist_ok=True)
-with open(transcriptPath, 'w', encoding='utf-8') as transcriptFile:
-    for segment in segments:
-        transcriptFile.write(f"[{{segment.start:.0f}}s] {{segment.text}}\\n")
-print(f"  Done in {{time.time() - startTime:.0f}}s", flush=True)
-"""
-    return subprocess.run(
-        [sys.executable, "-X", "faulthandler", "-u", "-c", script],
-        cwd=OUTPUT_DIR,
+def _convertToWav(mediaPath, wavPath):
+    """Convert downloaded media to 16kHz mono WAV for faster-whisper."""
+    result = subprocess.run(
+        [
+            "ffmpeg", "-y", "-v", "error",
+            "-i", mediaPath,
+            "-ac", "1", "-ar", "16000", "-sample_fmt", "s16",
+            wavPath,
+        ],
         text=True,
-        timeout=900,
+        timeout=300,
     )
+    if result.returncode != 0 or not os.path.exists(wavPath):
+        raise RuntimeError("ffmpeg conversion to WAV failed")
+    return wavPath
 
 
-def transcribeMediaInSubprocess(mediaPath, transcriptPath):
-    """优先 CUDA，失败或原生崩溃后自动改用 CPU 转写。"""
-    for device, computeType in [("cuda", "auto"), ("cpu", "int8")]:
-        result = runTranscribeDevice(mediaPath, transcriptPath, device, computeType)
-        if result.returncode == 0:
+def transcribeMedia(mediaPath, transcriptPath):
+    """Transcribe media using segmented faster-whisper.
+
+    Converts media to 16kHz mono WAV, then splits into 300s segments
+    to avoid VRAM overflow on GPUs with limited memory.
+    Falls back from CUDA to CPU if the GPU path fails.
+    """
+    wavPath = mediaPath.rsplit(".", 1)[0] + ".wav"
+    _convertToWav(mediaPath, wavPath)
+    print(f"  [3/4] WAV prepared: {wavPath}")
+
+    for device, computeType in [("cuda", "float16"), ("cpu", "int8")]:
+        try:
+            print(f"  [3/4] Transcribing ({device}, {computeType})...")
+            transcribe_segmented(
+                wavPath,
+                transcriptPath,
+                segment_s=300,
+                model_size="small",
+                device=device,
+                compute_type=computeType,
+                language="zh",
+            )
             return transcriptPath
-        print(f"  {device} subprocess failed: exit code {result.returncode}")
+        except Exception as exc:
+            print(f"  {device} transcription failed: {exc}")
 
     raise RuntimeError("Transcription failed on all devices")
 
@@ -397,7 +401,7 @@ def main(shortUrl):
         return 1
 
     print(f"  Media saved: {mediaPath}")
-    transcribeMediaInSubprocess(mediaPath, transcriptPath)
+    transcribeMedia(mediaPath, transcriptPath)
 
     print("  [4/4] Finished")
     print(f"\nTranscript: {transcriptPath}")

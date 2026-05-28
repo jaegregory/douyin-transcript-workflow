@@ -3,3 +3,7 @@ requests
 faster-whisper
 av
 
+# System dependency (not pip):
+# ffmpeg - required for audio conversion. Install via:
+#   winget install ffmpeg   (Windows)
+#   or download from https://ffmpeg.org/download.html
