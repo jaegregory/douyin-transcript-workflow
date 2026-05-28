@@ -1,0 +1,26 @@
+# Credentials and browser exports
+cookies*.txt
+*cookie*.txt
+
+# Downloaded media and generated transcripts
+transcripts/
+media/
+*.mp4
+*.mp3
+*.m4a
+*.aac
+*_transcript.txt
+
+# Local debug/runtime files
+douyin_urls.txt
+douyin_debug_urls.txt
+temp_douyin_audio*
+_douyin_temp_media*
+pipeline_run.log
+
+# Python cache
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
