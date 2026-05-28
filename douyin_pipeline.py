@@ -346,37 +346,46 @@ def _convertToWav(mediaPath, wavPath):
     return wavPath
 
 
-def transcribeMedia(mediaPath, transcriptPath):
+def _detectDevice(device):
+    """Resolve device='auto' to a concrete (device, compute_type) pair."""
+    if device in ("cuda", "cpu"):
+        computeType = "float16" if device == "cuda" else "int8"
+        return device, computeType
+
+    import torch
+    if torch.cuda.is_available():
+        return "cuda", "float16"
+    return "cpu", "int8"
+
+
+def transcribeMedia(mediaPath, transcriptPath, device="auto"):
     """Transcribe media using segmented faster-whisper.
 
     Converts media to 16kHz mono WAV, then splits into 300s segments
-    to avoid VRAM overflow on GPUs with limited memory.
-    Falls back from CUDA to CPU if the GPU path fails.
+    to avoid VRAM overflow on GPUs with ≤6 GB.
+
+    device: 'cuda' (GPU only), 'cpu' (CPU int8), or 'auto' (detect).
     """
+    resolvedDevice, computeType = _detectDevice(device)
     wavPath = mediaPath.rsplit(".", 1)[0] + ".wav"
+
     _convertToWav(mediaPath, wavPath)
     print(f"  [3/4] WAV prepared: {wavPath}")
+    print(f"  [3/4] Transcribing ({resolvedDevice}, {computeType})...")
 
-    for device, computeType in [("cuda", "float16"), ("cpu", "int8")]:
-        try:
-            print(f"  [3/4] Transcribing ({device}, {computeType})...")
-            transcribe_segmented(
-                wavPath,
-                transcriptPath,
-                segment_s=300,
-                model_size="small",
-                device=device,
-                compute_type=computeType,
-                language="zh",
-            )
-            return transcriptPath
-        except Exception as exc:
-            print(f"  {device} transcription failed: {exc}")
-
-    raise RuntimeError("Transcription failed on all devices")
+    transcribe_segmented(
+        wavPath,
+        transcriptPath,
+        segment_s=300,
+        model_size="small",
+        device=resolvedDevice,
+        compute_type=computeType,
+        language="zh",
+    )
+    return transcriptPath
 
 
-def main(shortUrl):
+def main(shortUrl, device="auto"):
     print(f"Douyin Pipeline\n  URL: {shortUrl}\n")
 
     os.makedirs(TRANSCRIPT_DIR, exist_ok=True)
@@ -388,7 +397,7 @@ def main(shortUrl):
     candidateUrls = rankCandidateUrls(candidateList)
     if not candidateUrls:
         print(f"ERROR: Could not find media URL. Debug file: {DEBUG_URLS_PATH}")
-        return 1
+        return None, None
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     baseName = f"douyin_{videoId or timestamp}_{timestamp}"
@@ -398,19 +407,31 @@ def main(shortUrl):
     usedUrl, _sizeMb = downloadBestMedia(candidateUrls, mediaPath)
     if not usedUrl:
         print(f"ERROR: Downloaded media was too small or invalid. Debug file: {DEBUG_URLS_PATH}")
-        return 1
+        return None, None
 
     print(f"  Media saved: {mediaPath}")
-    transcribeMedia(mediaPath, transcriptPath)
+    transcribeMedia(mediaPath, transcriptPath, device=device)
 
     print("  [4/4] Finished")
     print(f"\nTranscript: {transcriptPath}")
     print(f"Media: {mediaPath}")
-    return 0
+    return transcriptPath, mediaPath
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python douyin_pipeline.py <douyin_short_link>")
+        print("Usage: python douyin_pipeline.py <douyin_short_link> [--device auto|cuda|cpu]")
         sys.exit(1)
-    sys.exit(main(sys.argv[1]))
+    dev = "auto"
+    args = sys.argv[1:]
+    if "--device" in args:
+        idx = args.index("--device")
+        if idx + 1 < len(args):
+            dev = args[idx + 1]
+        args.pop(idx)
+        if idx < len(args):
+            args.pop(idx)
+    if not args or dev not in ("auto", "cuda", "cpu"):
+        print("Usage: python douyin_pipeline.py <douyin_short_link> [--device auto|cuda|cpu]")
+        sys.exit(1)
+    _, _ = main(args[0], device=dev)

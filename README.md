@@ -47,8 +47,30 @@ playwright install chromium
 
 ## 一键命令
 
+### 单条处理
+
 ```powershell
-python -u D:\Projects\douyin_launcher.py "<抖音链接>"
+# 自动选择设备（有 GPU 用 CUDA，无 GPU 用 CPU）
+python douyin_launcher.py "<抖音链接>"
+
+# 强制 GPU
+python douyin_launcher.py --device cuda "<抖音链接>"
+
+# 强制 CPU（无独显用户）
+python douyin_launcher.py --device cpu "<抖音链接>"
+```
+
+### 批量处理
+
+```powershell
+# 多个链接
+python douyin_launcher.py "<链接1>" "<链接2>" "<链接3>"
+
+# 从文件读取（每行一个链接，# 开头为注释）
+python douyin_launcher.py --urls-file urls.txt
+
+# 批量 + CPU 模式
+python douyin_launcher.py --device cpu --urls-file urls.txt
 ```
 
 成功后会生成：
@@ -111,11 +133,11 @@ python transcribe_segmented.py <input.wav> <output.txt> [300]
 2. `D:\Projects\douyin_urls.txt` 是否抓到了真实媒体 URL。
 3. 如果只抓到 0.2 MB 左右的占位视频，说明当前 cookie 或页面状态没有拿到正片地址。
 4. 如果下载到了 video-only 流，脚本会自动跳过无音频轨的候选 URL。
-5. 如果 CUDA 转写失败，脚本会自动回退到 CPU int8。
+5. 如果 CUDA 转写失败，可以显式切换 `--device cpu` 重试。
 6. 最后再退回分步执行：
 
 ```powershell
-python -u douyin_pipeline.py "<抖音链接>"   # 仅下载
+python douyin_pipeline.py "<抖音链接>" --device cpu
 python transcribe_segmented.py <media.wav> <output.txt>
 ```
 
