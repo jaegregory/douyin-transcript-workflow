@@ -108,3 +108,7 @@ python -X faulthandler -u D:\Projects\transcribe.py D:\Projects\temp_douyin_audi
 - 不要提交下载的视频、音频或转写结果，除非你确认有权限公开。
 - 不要把 cookie 粘贴到 issue、README、聊天记录或 commit 里。
 - 如果 cookie 不小心泄露，建议退出网页版抖音登录状态，重新登录刷新 cookie。
+
+## License
+
+MIT
